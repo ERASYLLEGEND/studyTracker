@@ -24,8 +24,16 @@ import {
   ChevronRight,
   ChevronLeft,
   MoreVertical,
-  Edit
+  Edit,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
+
+interface Subtask {
+  id: string;
+  title: string;
+  completed: boolean;
+}
 
 interface Task {
   id: string;
@@ -35,6 +43,7 @@ interface Task {
   status: 'todo' | 'in_progress' | 'done';
   due_at: string | null;
   created_at: string;
+  subtasks: Subtask[];
 }
 
 interface Exam {
@@ -50,6 +59,7 @@ interface Habit {
   streak: number;
   completed_today: boolean;
   days: string[];
+  reminder_time: string | null;
   created_at: string;
 }
 
@@ -92,6 +102,11 @@ export default function Home() {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [newHabit, setNewHabit] = useState('');
   const [selectedDays, setSelectedDays] = useState<string[]>(WEEK_DAYS.map(d => d.id));
+  const [habitReminderTime, setHabitReminderTime] = useState('');
+
+  // State: Subtasks
+  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
+  const [newSubtask, setNewSubtask] = useState<{ [taskId: string]: string }>({});
 
   // State: Pomodoro
   const [timeLeft, setTimeLeft] = useState(25 * 60);
@@ -121,6 +136,46 @@ export default function Home() {
     fetchExams();
     fetchHabits();
   }, []);
+
+  // Request notification permission and check habit reminders
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+    }
+
+    // Check for habit reminders every minute
+    const checkReminders = () => {
+      const now = new Date();
+      const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const todayId = getCurrentDayId();
+
+      habits.forEach(habit => {
+        if (
+          habit.reminder_time === currentTime &&
+          habit.days.includes(todayId) &&
+          !habit.completed_today
+        ) {
+          sendHabitReminder(habit.title);
+        }
+      });
+    };
+
+    const reminderInterval = setInterval(checkReminders, 60000); // Check every minute
+
+    return () => clearInterval(reminderInterval);
+  }, [habits]);
+
+  const sendHabitReminder = (habitTitle: string) => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      new Notification('StudyTracker - Напоминание', {
+        body: `Не забудьте выполнить привычку: ${habitTitle}`,
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
+      });
+    }
+  };
 
   // Pomodoro Logic
   useEffect(() => {
@@ -169,7 +224,8 @@ export default function Home() {
         priority,
         completed: false,
         status: 'todo' as const,
-        due_at: taskDueDate || null
+        due_at: taskDueDate || null,
+        subtasks: []
       };
       
       const tempId = `temp-${Date.now()}`;
@@ -210,6 +266,105 @@ export default function Home() {
       showNotification('error', 'Ошибка обновления задачи');
       console.error('Error toggling task:', error);
     }
+  };
+
+  // Subtask functions
+  const toggleSubtask = async (taskId: string, subtaskId: string, completed: boolean) => {
+    try {
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return;
+
+      const updatedSubtasks = task.subtasks.map(st =>
+        st.id === subtaskId ? { ...st, completed: !completed } : st
+      );
+
+      const { error } = await supabase
+        .from('tasks')
+        .update({ subtasks: updatedSubtasks })
+        .eq('id', taskId);
+
+      if (error) throw error;
+
+      setTasks(tasks.map(t => t.id === taskId ? { ...t, subtasks: updatedSubtasks } : t));
+    } catch (error) {
+      showNotification('error', 'Ошибка обновления подзадачи');
+      console.error('Error toggling subtask:', error);
+    }
+  };
+
+  const addSubtask = async (taskId: string) => {
+    const subtaskTitle = newSubtask[taskId];
+    if (!subtaskTitle?.trim()) return;
+
+    try {
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return;
+
+      const newSubtask: Subtask = {
+        id: `sub-${Date.now()}`,
+        title: subtaskTitle,
+        completed: false
+      };
+
+      const updatedSubtasks = [...task.subtasks, newSubtask];
+
+      const { error } = await supabase
+        .from('tasks')
+        .update({ subtasks: updatedSubtasks })
+        .eq('id', taskId);
+
+      if (error) throw error;
+
+      setTasks(tasks.map(t => t.id === taskId ? { ...t, subtasks: updatedSubtasks } : t));
+      setNewSubtask(prev => ({ ...prev, [taskId]: '' }));
+      showNotification('success', 'Подзадача добавлена');
+    } catch (error) {
+      showNotification('error', 'Ошибка добавления подзадачи');
+      console.error('Error adding subtask:', error);
+    }
+  };
+
+  const deleteSubtask = async (taskId: string, subtaskId: string) => {
+    try {
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return;
+
+      const updatedSubtasks = task.subtasks.filter(st => st.id !== subtaskId);
+
+      const { error } = await supabase
+        .from('tasks')
+        .update({ subtasks: updatedSubtasks })
+        .eq('id', taskId);
+
+      if (error) throw error;
+
+      setTasks(tasks.map(t => t.id === taskId ? { ...t, subtasks: updatedSubtasks } : t));
+    } catch (error) {
+      showNotification('error', 'Ошибка удаления подзадачи');
+      console.error('Error deleting subtask:', error);
+    }
+  };
+
+  const toggleTaskExpansion = (taskId: string) => {
+    setExpandedTasks(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(taskId)) {
+        newSet.delete(taskId);
+      } else {
+        newSet.add(taskId);
+      }
+      return newSet;
+    });
+  };
+
+  const getSubtaskProgress = (subtasks: Subtask[]) => {
+    if (!subtasks || subtasks.length === 0) return { completed: 0, total: 0, percentage: 0 };
+    const completed = subtasks.filter(st => st.completed).length;
+    return {
+      completed,
+      total: subtasks.length,
+      percentage: Math.round((completed / subtasks.length) * 100)
+    };
   };
 
   const updateTaskStatus = async (id: string, status: 'todo' | 'in_progress' | 'done') => {
@@ -307,7 +462,8 @@ export default function Home() {
         title: newHabit, 
         streak: 0, 
         completed_today: false,
-        days: selectedDays
+        days: selectedDays,
+        reminder_time: habitReminderTime || null
       };
       
       const tempId = `temp-${Date.now()}`;
@@ -315,6 +471,7 @@ export default function Home() {
       setHabits([...habits, tempHabit]);
       setNewHabit('');
       setSelectedDays(WEEK_DAYS.map(d => d.id));
+      setHabitReminderTime('');
 
       const { data, error } = await supabase
         .from('habits')
@@ -657,51 +814,131 @@ export default function Home() {
               <div className="grid gap-3">
                 {getFilteredAndSortedTasks().map((task) => {
                   const deadline = formatDeadline(task.due_at);
+                  const subtaskProgress = getSubtaskProgress(task.subtasks || []);
+                  const isExpanded = expandedTasks.has(task.id);
+                  
                   return (
                     <div 
                       key={task.id} 
-                      className={`flex items-center justify-between p-4 rounded-xl border backdrop-blur transition-all duration-200 hover:shadow-lg ${
+                      className={`rounded-xl border backdrop-blur transition-all duration-200 hover:shadow-lg ${
                         task.completed 
                           ? 'bg-zinc-900/30 border-zinc-800 opacity-60' 
                           : 'bg-zinc-900/50 border-zinc-800 hover:border-zinc-700'
                       }`}
                     >
-                      <div className="flex items-center gap-4">
-                        <button 
-                          onClick={() => toggleTask(task.id, task.completed)} 
-                          className={`transition-all duration-200 ${
-                            task.completed 
-                              ? 'text-emerald-400 scale-110' 
-                              : 'text-zinc-600 hover:text-zinc-400'
-                          }`}
-                        >
-                          <CheckCircle2 size={24} />
-                        </button>
-                        <div className="flex-1">
-                          <span className={`font-medium transition-all ${
-                            task.completed ? 'line-through text-zinc-500' : 'text-zinc-100'
-                          }`}>
-                            {task.title}
-                          </span>
-                          {deadline && (
-                            <div className={`flex items-center gap-1 mt-1 text-xs ${deadline.isOverdue ? 'text-red-400' : 'text-zinc-500'}`}>
-                              <Clock size={12} />
-                              <span>{deadline.text}</span>
+                      <div className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4 flex-1">
+                            <button 
+                              onClick={() => toggleTask(task.id, task.completed)} 
+                              className={`transition-all duration-200 ${
+                                task.completed 
+                                  ? 'text-emerald-400 scale-110' 
+                                  : 'text-zinc-600 hover:text-zinc-400'
+                              }`}
+                            >
+                              <CheckCircle2 size={24} />
+                            </button>
+                            <div className="flex-1">
+                              <span className={`font-medium transition-all ${
+                                task.completed ? 'line-through text-zinc-500' : 'text-zinc-100'
+                              }`}>
+                                {task.title}
+                              </span>
+                              {deadline && (
+                                <div className={`flex items-center gap-1 mt-1 text-xs ${deadline.isOverdue ? 'text-red-400' : 'text-zinc-500'}`}>
+                                  <Clock size={12} />
+                                  <span>{deadline.text}</span>
+                                </div>
+                              )}
+                              {subtaskProgress.total > 0 && (
+                                <div className="mt-2">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                                      <div 
+                                        className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-300"
+                                        style={{ width: `${subtaskProgress.percentage}%` }}
+                                      />
+                                    </div>
+                                    <span className="text-xs text-zinc-400">
+                                      {subtaskProgress.completed}/{subtaskProgress.total}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                          )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {subtaskProgress.total > 0 && (
+                              <button
+                                onClick={() => toggleTaskExpansion(task.id)}
+                                className="text-zinc-500 hover:text-zinc-300 p-1 transition-colors"
+                              >
+                                {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                              </button>
+                            )}
+                            <span className={`text-xs px-3 py-1 rounded-full border font-medium ${getPriorityColor(task.priority)}`}>
+                              {getPriorityLabel(task.priority)}
+                            </span>
+                            <button 
+                              onClick={() => deleteTask(task.id)} 
+                              className="text-zinc-600 hover:text-red-400 p-2 transition-colors"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className={`text-xs px-3 py-1 rounded-full border font-medium ${getPriorityColor(task.priority)}`}>
-                          {getPriorityLabel(task.priority)}
-                        </span>
-                        <button 
-                          onClick={() => deleteTask(task.id)} 
-                          className="text-zinc-600 hover:text-red-400 p-2 transition-colors"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
+                      
+                      {/* Subtasks */}
+                      {isExpanded && (
+                        <div className="px-4 pb-4 border-t border-zinc-800/50 pt-3">
+                          <div className="space-y-2">
+                            {task.subtasks?.map((subtask) => (
+                              <div key={subtask.id} className="flex items-center gap-2 p-2 rounded-lg bg-zinc-900/30">
+                                <button
+                                  onClick={() => toggleSubtask(task.id, subtask.id, subtask.completed)}
+                                  className={`transition-all ${
+                                    subtask.completed ? 'text-emerald-400' : 'text-zinc-600 hover:text-zinc-400'
+                                  }`}
+                                >
+                                  <CheckCircle2 size={18} />
+                                </button>
+                                <span className={`flex-1 text-sm ${subtask.completed ? 'line-through text-zinc-500' : 'text-zinc-200'}`}>
+                                  {subtask.title}
+                                </span>
+                                <button
+                                  onClick={() => deleteSubtask(task.id, subtask.id)}
+                                  className="text-zinc-600 hover:text-red-400 p-1"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            ))}
+                            <div className="flex gap-2 mt-2">
+                              <input
+                                type="text"
+                                placeholder="Новая подзадача..."
+                                value={newSubtask[task.id] || ''}
+                                onChange={(e) => setNewSubtask(prev => ({ ...prev, [task.id]: e.target.value }))}
+                                className="flex-1 h-9 bg-slate-900 border border-slate-800 text-slate-100 rounded-lg px-3 py-1.5 text-sm placeholder-slate-500 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                onKeyPress={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    addSubtask(task.id);
+                                  }
+                                }}
+                              />
+                              <button
+                                onClick={() => addSubtask(task.id)}
+                                className="h-9 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm transition-colors"
+                              >
+                                <Plus size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1077,6 +1314,16 @@ export default function Home() {
                   ))}
                 </div>
               </div>
+
+              <div>
+                <p className="text-sm text-zinc-400 mb-2">Время напоминания (опционально):</p>
+                <input
+                  type="time"
+                  value={habitReminderTime}
+                  onChange={(e) => setHabitReminderTime(e.target.value)}
+                  className="w-full h-11 bg-slate-900 border border-slate-800 text-slate-100 rounded-xl px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
               
               <button 
                 type="submit" 
@@ -1118,6 +1365,12 @@ export default function Home() {
                           <span className={`text-sm ${habit.streak > 0 ? 'text-orange-400 font-medium' : 'text-zinc-500'}`}>
                             {habit.streak} {habit.streak === 1 ? 'день' : habit.streak > 1 && habit.streak < 5 ? 'дня' : 'дней'}
                           </span>
+                          {habit.reminder_time && (
+                            <div className="flex items-center gap-1 text-xs text-zinc-500">
+                              <Bell size={12} />
+                              <span>{habit.reminder_time}</span>
+                            </div>
+                          )}
                         </div>
                         <div className="flex gap-1 mt-2">
                           {habit.days?.map(dayId => {
