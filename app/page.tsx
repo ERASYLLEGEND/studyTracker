@@ -577,16 +577,17 @@ export default function Home() {
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full pb-24 md:pb-8">
+      <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full pb-24 md:pb-8 pt-safe">
         {activeTab === 'tasks' && (
           <section className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-3xl font-bold text-zinc-100 tracking-tight">Задачи</h2>
-              <div className="flex items-center gap-2">
+            {/* Header with filters - adaptive layout */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-zinc-100 tracking-tight">Задачи</h2>
+              <div className="flex flex-wrap items-center gap-2">
                 <select
                   value={taskFilter}
                   onChange={(e) => setTaskFilter(e.target.value as any)}
-                  className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:border-zinc-700"
+                  className="bg-slate-900 border border-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                 >
                   <option value="all">Все приоритеты</option>
                   <option value="high">Высокий</option>
@@ -596,22 +597,22 @@ export default function Home() {
                 <select
                   value={taskSort}
                   onChange={(e) => setTaskSort(e.target.value as any)}
-                  className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:border-zinc-700"
+                  className="bg-slate-900 border border-slate-800 text-slate-100 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                 >
                   <option value="date">По дате</option>
                   <option value="priority">По приоритету</option>
                   <option value="deadline">По дедлайну</option>
                 </select>
-                <div className="flex bg-zinc-900 rounded-lg border border-zinc-800">
+                <div className="flex bg-slate-900 rounded-lg border border-slate-800">
                   <button
                     onClick={() => setTaskView('list')}
-                    className={`p-2 rounded-l-lg transition-colors ${taskView === 'list' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                    className={`p-2 rounded-l-lg transition-colors ${taskView === 'list' ? 'bg-slate-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
                   >
                     <List size={18} />
                   </button>
                   <button
                     onClick={() => setTaskView('kanban')}
-                    className={`p-2 rounded-r-lg transition-colors ${taskView === 'kanban' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                    className={`p-2 rounded-r-lg transition-colors ${taskView === 'kanban' ? 'bg-slate-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
                   >
                     <LayoutGrid size={18} />
                   </button>
@@ -619,24 +620,25 @@ export default function Home() {
               </div>
             </div>
 
-            <form onSubmit={addTask} className="flex flex-col md:flex-row gap-3">
+            {/* Form - grid on mobile, horizontal on desktop */}
+            <form onSubmit={addTask} className="grid grid-cols-1 sm:grid-cols-12 gap-2">
               <input
                 type="text"
                 placeholder="Новая задача..."
                 value={newTask}
                 onChange={(e) => setNewTask(e.target.value)}
-                className="flex-1 bg-zinc-900/50 backdrop-blur border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-700 transition-colors"
+                className="sm:col-span-5 h-11 bg-slate-900 border border-slate-800 text-slate-100 rounded-xl px-3 py-2 placeholder-slate-500 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
               />
               <input
                 type="datetime-local"
                 value={taskDueDate}
                 onChange={(e) => setTaskDueDate(e.target.value)}
-                className="bg-zinc-900/50 backdrop-blur border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 focus:outline-none focus:border-zinc-700 transition-colors"
+                className="sm:col-span-3 h-11 bg-slate-900 border border-slate-800 text-slate-100 rounded-xl px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
               />
               <select
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as any)}
-                className="bg-zinc-900/50 backdrop-blur border border-zinc-800 rounded-xl px-4 text-sm text-zinc-300 focus:outline-none focus:border-zinc-700"
+                className="sm:col-span-2 h-11 bg-slate-900 border border-slate-800 text-slate-100 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
               >
                 <option value="low">Низкий</option>
                 <option value="medium">Средний</option>
@@ -644,7 +646,7 @@ export default function Home() {
               </select>
               <button 
                 type="submit" 
-                className="bg-zinc-100 hover:bg-zinc-200 text-zinc-900 px-6 rounded-xl font-medium flex items-center gap-2 transition-colors"
+                className="sm:col-span-2 h-11 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-medium flex items-center justify-center gap-2 transition-colors"
               >
                 <Plus size={18} />
                 <span className="hidden sm:inline">Добавить</span>
@@ -764,26 +766,26 @@ export default function Home() {
 
         {activeTab === 'exams' && (
           <section className="space-y-6">
-            <h2 className="text-3xl font-bold text-zinc-100 tracking-tight">СОР / СОЧ / Экзамены</h2>
+            <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-zinc-100 tracking-tight">СОР / СОЧ / Экзамены</h2>
             
-            <form onSubmit={addExam} className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <form onSubmit={addExam} className="grid grid-cols-1 sm:grid-cols-12 gap-2">
               <input
                 type="text"
                 placeholder="Предмет / Тема"
                 value={examTitle}
                 onChange={(e) => setExamTitle(e.target.value)}
-                className="bg-zinc-900/50 backdrop-blur border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-700 md:col-span-2"
+                className="sm:col-span-5 h-11 bg-slate-900 border border-slate-800 text-slate-100 rounded-xl px-3 py-2 placeholder-slate-500 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
               />
               <input
                 type="date"
                 value={examDate}
                 onChange={(e) => setExamDate(e.target.value)}
-                className="bg-zinc-900/50 backdrop-blur border border-zinc-800 rounded-xl px-4 text-zinc-100 focus:outline-none focus:border-zinc-700"
+                className="sm:col-span-3 h-11 bg-slate-900 border border-slate-800 text-slate-100 rounded-xl px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
               />
               <select 
                 value={examType} 
                 onChange={(e) => setExamType(e.target.value as any)} 
-                className="bg-zinc-900/50 backdrop-blur border border-zinc-800 rounded-xl px-4 text-zinc-100 focus:outline-none focus:border-zinc-700"
+                className="sm:col-span-2 h-11 bg-slate-900 border border-slate-800 text-slate-100 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
               >
                 <option value="СОР">СОР</option>
                 <option value="СОЧ">СОЧ</option>
@@ -791,9 +793,9 @@ export default function Home() {
               </select>
               <button 
                 type="submit" 
-                className="md:col-span-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-900 py-3 rounded-xl font-medium transition-colors"
+                className="sm:col-span-2 h-11 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-medium transition-colors"
               >
-                Добавить Контрольную
+                Добавить
               </button>
             </form>
 
@@ -837,28 +839,28 @@ export default function Home() {
 
         {activeTab === 'calendar' && (
           <section className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-3xl font-bold text-zinc-100 tracking-tight">Календарь</h2>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-zinc-100 tracking-tight">Календарь</h2>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1))}
-                  className="p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:border-zinc-700 transition-colors"
+                  className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-zinc-400 hover:text-zinc-100 hover:border-slate-700 transition-colors"
                 >
                   <ChevronLeft size={20} />
                 </button>
-                <span className="text-zinc-100 font-medium min-w-[150px] text-center">
+                <span className="text-zinc-100 font-medium min-w-[150px] text-center text-sm sm:text-base">
                   {selectedDate.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })}
                 </span>
                 <button
                   onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 1))}
-                  className="p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 hover:border-zinc-700 transition-colors"
+                  className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-zinc-400 hover:text-zinc-100 hover:border-slate-700 transition-colors"
                 >
                   <ChevronRight size={20} />
                 </button>
               </div>
             </div>
 
-            <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 backdrop-blur">
+            <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 backdrop-blur">
               <div className="grid grid-cols-7 gap-2 mb-2">
                 {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((day) => (
                   <div key={day} className="text-center text-sm text-zinc-500 font-medium py-2">
@@ -966,7 +968,7 @@ export default function Home() {
 
         {activeTab === 'pomodoro' && (
           <section className="flex flex-col items-center justify-center py-12 space-y-8">
-            <h2 className="text-3xl font-bold text-zinc-100 tracking-tight">Фокус-Таймер</h2>
+            <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-zinc-100 tracking-tight">Фокус-Таймер</h2>
             
             <div className="relative">
               <div className={`w-72 h-72 rounded-full border-4 flex flex-col items-center justify-center backdrop-blur-xl transition-all duration-500 ${
@@ -1023,8 +1025,8 @@ export default function Home() {
 
         {activeTab === 'habits' && (
           <section className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-3xl font-bold text-zinc-100 tracking-tight">Привычки</h2>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-zinc-100 tracking-tight">Привычки</h2>
               <div className="flex items-center gap-2 text-sm text-zinc-400">
                 <Flame size={16} className="text-orange-400" />
                 <span>
@@ -1053,7 +1055,7 @@ export default function Home() {
                 placeholder="Новая привычка (напр. Чтение 20 минут)..."
                 value={newHabit}
                 onChange={(e) => setNewHabit(e.target.value)}
-                className="w-full bg-zinc-900/50 backdrop-blur border border-zinc-800 rounded-xl px-4 py-3 text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-700 transition-colors"
+                className="w-full h-11 bg-slate-900 border border-slate-800 text-slate-100 rounded-xl px-3 py-2 placeholder-slate-500 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
               />
               
               <div>
@@ -1066,8 +1068,8 @@ export default function Home() {
                       onClick={() => toggleDaySelection(day.id)}
                       className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-all ${
                         selectedDays.includes(day.id)
-                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100'
-                          : 'bg-zinc-900/30 border-zinc-800 text-zinc-500 hover:border-zinc-700'
+                          ? 'bg-slate-800 border-slate-700 text-zinc-100'
+                          : 'bg-slate-900/30 border-slate-800 text-zinc-500 hover:border-slate-700'
                       }`}
                     >
                       {day.label}
@@ -1078,7 +1080,7 @@ export default function Home() {
               
               <button 
                 type="submit" 
-                className="w-full bg-zinc-100 hover:bg-zinc-200 text-zinc-900 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-colors"
+                className="w-full h-11 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-medium flex items-center justify-center gap-2 transition-colors"
               >
                 <Plus size={18} />
                 Добавить привычку
@@ -1147,7 +1149,7 @@ export default function Home() {
       </main>
 
       {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-zinc-950/90 backdrop-blur-xl border-t border-zinc-800 flex justify-around p-3 z-50">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-zinc-950/90 backdrop-blur-xl border-t border-zinc-800 flex justify-around p-3 pb-safe z-50">
         <button 
           onClick={() => setActiveTab('tasks')} 
           className={`flex flex-col items-center transition-colors ${
