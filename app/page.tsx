@@ -195,7 +195,6 @@ export default function Home() {
             badge: '/icon-192.png',
             tag: 'habit-reminder',
             requireInteraction: true,
-            vibrate: [200, 100, 200],
             data: {
               url: window.location.href
             }
