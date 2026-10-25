@@ -91,3 +91,24 @@ self.addEventListener('message', (event) => {
     self.skipWaiting();
   }
 });
+
+// Обработка кликов на уведомления
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  // Открываем приложение при клике на уведомление
+  event.waitUntil(
+    clients.matchAll({ type: 'window' }).then((clientList) => {
+      // Если есть открытое окно приложения, фокусируемся на нем
+      for (const client of clientList) {
+        if (client.url === event.notification.data.url && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      // Если нет открытого окна, открываем новое
+      if (clients.openWindow) {
+        return clients.openWindow(event.notification.data.url || '/');
+      }
+    })
+  );
+});

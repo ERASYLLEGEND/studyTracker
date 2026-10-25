@@ -113,6 +113,9 @@ export default function Home() {
   const [isRunning, setIsRunning] = useState(false);
   const [mode, setMode] = useState<'work' | 'break'>('work');
 
+  // State: Notifications
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>('unsupported');
+
   // Get current day of week
   const getCurrentDayId = () => {
     const day = new Date().getDay();
@@ -140,9 +143,7 @@ export default function Home() {
   // Request notification permission and check habit reminders
   useEffect(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
-      if (Notification.permission === 'default') {
-        Notification.requestPermission();
-      }
+      setNotificationPermission(Notification.permission);
     }
 
     // Check for habit reminders every minute
@@ -167,13 +168,49 @@ export default function Home() {
     return () => clearInterval(reminderInterval);
   }, [habits]);
 
-  const sendHabitReminder = (habitTitle: string) => {
+  const requestNotificationPermission = async () => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+      
+      if (permission === 'granted') {
+        showNotification('success', 'Уведомления включены! ✅');
+      } else if (permission === 'denied') {
+        showNotification('error', 'Уведомления отключены. Включите их в настройках iOS');
+      }
+    } else {
+      showNotification('error', 'Уведомления не поддерживаются в этом браузере');
+    }
+  };
+
+  const sendHabitReminder = async (habitTitle: string) => {
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-      new Notification('StudyTracker - Напоминание', {
-        body: `Не забудьте выполнить привычку: ${habitTitle}`,
-        icon: '/icon-192.png',
-        badge: '/icon-192.png',
-      });
+      try {
+        // Используем Service Worker для iOS PWA
+        if ('serviceWorker' in navigator) {
+          const registration = await navigator.serviceWorker.ready;
+          await registration.showNotification('StudyTracker - Напоминание', {
+            body: `Не забудьте выполнить привычку: ${habitTitle}`,
+            icon: '/icon-192.png',
+            badge: '/icon-192.png',
+            tag: 'habit-reminder',
+            requireInteraction: true,
+            vibrate: [200, 100, 200],
+            data: {
+              url: window.location.href
+            }
+          });
+        } else {
+          // Fallback для desktop
+          new Notification('StudyTracker - Напоминание', {
+            body: `Не забудьте выполнить привычку: ${habitTitle}`,
+            icon: '/icon-192.png',
+            badge: '/icon-192.png',
+          });
+        }
+      } catch (error) {
+        console.error('Error sending notification:', error);
+      }
     }
   };
 
@@ -1264,13 +1301,42 @@ export default function Home() {
           <section className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-zinc-100 tracking-tight">Привычки</h2>
-              <div className="flex items-center gap-2 text-sm text-zinc-400">
-                <Flame size={16} className="text-orange-400" />
-                <span>
-                  {activeHabits.filter(h => h.completed_today).length} из {activeHabits.length} сегодня
-                </span>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 text-sm text-zinc-400">
+                  <Flame size={16} className="text-orange-400" />
+                  <span>
+                    {activeHabits.filter(h => h.completed_today).length} из {activeHabits.length} сегодня
+                  </span>
+                </div>
+                {notificationPermission !== 'granted' && (
+                  <button
+                    onClick={requestNotificationPermission}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-lg flex items-center gap-2 transition-colors"
+                  >
+                    <Bell size={14} />
+                    <span className="hidden sm:inline">Включить уведомления</span>
+                    <span className="sm:hidden">Уведомления</span>
+                  </button>
+                )}
               </div>
             </div>
+
+            {/* Notification Permission Warning */}
+            {notificationPermission === 'denied' && (
+              <div className="p-4 rounded-xl border border-yellow-900/50 bg-yellow-950/20 backdrop-blur">
+                <div className="flex items-start gap-3">
+                  <Bell size={20} className="text-yellow-400 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm text-yellow-100 font-medium mb-1">
+                      Уведомления отключены
+                    </p>
+                    <p className="text-xs text-yellow-200/70">
+                      Чтобы получать напоминания о привычках, включите уведомления в настройках iOS: Настройки → Safari → Уведомления
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Progress Bar */}
             <div className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/50 backdrop-blur">
