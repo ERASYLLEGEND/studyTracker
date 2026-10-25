@@ -115,6 +115,7 @@ export default function Home() {
 
   // State: Notifications
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>('unsupported');
+  const [sentNotifications, setSentNotifications] = useState<Set<string>>(new Set());
 
   // Get current day of week
   const getCurrentDayId = () => {
@@ -150,15 +151,20 @@ export default function Home() {
     const checkReminders = () => {
       const now = new Date();
       const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const currentDate = now.toDateString(); // Для предотвращения повторов в разные дни
       const todayId = getCurrentDayId();
 
       habits.forEach(habit => {
+        const notificationKey = `${habit.id}-${currentDate}-${currentTime}`;
+        
         if (
           habit.reminder_time === currentTime &&
           habit.days.includes(todayId) &&
-          !habit.completed_today
+          !habit.completed_today &&
+          !sentNotifications.has(notificationKey)
         ) {
           sendHabitReminder(habit.title);
+          setSentNotifications(prev => new Set([...prev, notificationKey]));
         }
       });
     };
@@ -166,7 +172,7 @@ export default function Home() {
     const reminderInterval = setInterval(checkReminders, 60000); // Check every minute
 
     return () => clearInterval(reminderInterval);
-  }, [habits]);
+  }, [habits, sentNotifications]);
 
   const requestNotificationPermission = async () => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -186,7 +192,7 @@ export default function Home() {
   const sendHabitReminder = async (habitTitle: string) => {
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
       try {
-        // Используем Service Worker для iOS PWA
+        // Для iOS PWA обязательно используем Service Worker
         if ('serviceWorker' in navigator) {
           const registration = await navigator.serviceWorker.ready;
           await registration.showNotification('StudyTracker - Напоминание', {
@@ -199,17 +205,15 @@ export default function Home() {
               url: window.location.href
             }
           });
+          console.log('[Notification] Sent via Service Worker:', habitTitle);
         } else {
-          // Fallback для desktop
-          new Notification('StudyTracker - Напоминание', {
-            body: `Не забудьте выполнить привычку: ${habitTitle}`,
-            icon: '/icon-192.png',
-            badge: '/icon-192.png',
-          });
+          console.warn('[Notification] Service Worker not available, skipping notification');
         }
       } catch (error) {
-        console.error('Error sending notification:', error);
+        console.error('[Notification] Error sending notification:', error);
       }
+    } else {
+      console.log('[Notification] Permission not granted:', Notification.permission);
     }
   };
 
@@ -1307,14 +1311,29 @@ export default function Home() {
                     {activeHabits.filter(h => h.completed_today).length} из {activeHabits.length} сегодня
                   </span>
                 </div>
-                {notificationPermission !== 'granted' && (
+                {notificationPermission === 'granted' ? (
+                  <div className="px-3 py-1.5 bg-emerald-600/20 border border-emerald-900/50 text-emerald-400 text-sm rounded-lg flex items-center gap-2">
+                    <Bell size={14} />
+                    <span className="hidden sm:inline">Уведомления включены</span>
+                    <span className="sm:hidden">Включены</span>
+                  </div>
+                ) : notificationPermission === 'denied' ? (
+                  <button
+                    onClick={requestNotificationPermission}
+                    className="px-3 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white text-sm rounded-lg flex items-center gap-2 transition-colors"
+                  >
+                    <Bell size={14} />
+                    <span className="hidden sm:inline">Повторить запрос</span>
+                    <span className="sm:hidden">Повторить</span>
+                  </button>
+                ) : (
                   <button
                     onClick={requestNotificationPermission}
                     className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-lg flex items-center gap-2 transition-colors"
                   >
                     <Bell size={14} />
-                    <span className="hidden sm:inline">Включить уведомления</span>
-                    <span className="sm:hidden">Уведомления</span>
+                    <span className="hidden sm:inline">🔔 Включить уведомления</span>
+                    <span className="sm:hidden">🔔 Уведомления</span>
                   </button>
                 )}
               </div>
@@ -1331,6 +1350,23 @@ export default function Home() {
                     </p>
                     <p className="text-xs text-yellow-200/70">
                       Чтобы получать напоминания о привычках, включите уведомления в настройках iOS: Настройки → Safari → Уведомления
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Info block for first-time users */}
+            {notificationPermission === 'default' && (
+              <div className="p-4 rounded-xl border border-indigo-900/50 bg-indigo-950/20 backdrop-blur">
+                <div className="flex items-start gap-3">
+                  <Bell size={20} className="text-indigo-400 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm text-indigo-100 font-medium mb-1">
+                      Включите уведомления для напоминаний
+                    </p>
+                    <p className="text-xs text-indigo-200/70">
+                      Нажмите кнопку выше, чтобы получать напоминания о привычках в нужное время
                     </p>
                   </div>
                 </div>
