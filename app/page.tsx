@@ -175,18 +175,44 @@ export default function Home() {
   }, [habits, sentNotifications]);
 
   const requestNotificationPermission = async () => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      const permission = await Notification.requestPermission();
-      setNotificationPermission(permission);
-      
-      if (permission === 'granted') {
-        showNotification('success', 'Уведомления включены! ✅');
-      } else if (permission === 'denied') {
-        showNotification('error', 'Уведомления отключены. Включите их в настройках iOS');
-      }
-    } else {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
       showNotification('error', 'Уведомления не поддерживаются в этом браузере');
+      return;
     }
+
+    const permission = await Notification.requestPermission();
+    setNotificationPermission(permission);
+
+    if (permission !== 'granted') {
+      showNotification('error', 'Уведомления отключены. Включите их в настройках iOS');
+      return;
+    }
+
+    // На iOS Web Push работает только в приложении, установленном на экран «Домой»
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (navigator as unknown as { standalone?: boolean }).standalone === true;
+
+    if (isIOS && !isStandalone) {
+      showNotification('error', 'На iPhone добавьте приложение на экран «Домой»');
+      return;
+    }
+
+    // Получаем FCM-токен и сохраняем его в Supabase для фоновых push-уведомлений.
+    // Динамический импорт: Firebase Messaging нельзя грузить при SSR.
+    const { getFCMToken, saveFCMTokenToSupabase } = await import('@/lib/firebase');
+    const token = await getFCMToken();
+    if (!token) {
+      showNotification('error', 'Не удалось получить push-токен устройства');
+      return;
+    }
+
+    const saved = await saveFCMTokenToSupabase(token);
+    showNotification(
+      saved ? 'success' : 'error',
+      saved ? 'Уведомления включены! ✅' : 'Токен получен, но не сохранён в базе'
+    );
   };
 
   const sendHabitReminder = async (habitTitle: string) => {

@@ -1,6 +1,7 @@
 import './globals.css';
 import type { Metadata, Viewport } from 'next';
 import ServiceWorkerRegister from './components/ServiceWorkerRegister';
+import FirebaseInit from './components/FirebaseInit';
 
 // PWA Metadata
 export const metadata: Metadata = {
@@ -39,6 +40,8 @@ export default function RootLayout({
       <body className="antialiased min-h-screen bg-slate-900 text-slate-100 pb-20 md:pb-0">
         {/* Регистрация Service Worker (клиентский компонент) */}
         <ServiceWorkerRegister />
+        {/* Инициализация Firebase Messaging */}
+        <FirebaseInit />
         {children}
       </body>
     </html>
