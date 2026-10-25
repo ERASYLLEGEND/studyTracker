@@ -466,9 +466,6 @@ export default function Home() {
         reminder_time: habitReminderTime || null
       };
       
-      // Временно убираем reminder_time если миграция не выполнена
-      delete (newHabitData as any).reminder_time;
-      
       const tempId = `temp-${Date.now()}`;
       const tempHabit = { ...newHabitData, id: tempId, created_at: new Date().toISOString() };
       setHabits([...habits, tempHabit]);
