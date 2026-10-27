@@ -96,6 +96,57 @@ const detectPlatform = (): string => {
   return 'web';
 };
 
+// getToken() требует УЖЕ активированный Service Worker: navigator.serviceWorker
+// .register() резолвится, когда воркер ещё в состоянии installing, и Firebase
+// падает с "[11] Subscribing for push requires an active service worker".
+// Поэтому дожидаемся state === 'activated' (или active у регистрации).
+const waitForActiveServiceWorker = async (
+  registration: ServiceWorkerRegistration,
+  timeoutMs = 20000
+): Promise<ServiceWorkerRegistration> => {
+  if (registration.active) return registration;
+
+  const worker = registration.installing || registration.waiting;
+  if (!worker) {
+    // Воркер установлен, но ещё не активирован — ждём готовности регистрации.
+    return Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error('Service Worker не активировался за 20 секунд')),
+          timeoutMs
+        )
+      ),
+    ]);
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      clearTimeout(timer);
+      worker.removeEventListener('statechange', onStateChange);
+    };
+    const onStateChange = () => {
+      if (registration.active) {
+        cleanup();
+        resolve();
+      } else if (worker.state === 'redundant') {
+        cleanup();
+        reject(new Error('установка Service Worker не удалась (redundant)'));
+      }
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error(`Service Worker завис в состоянии «${worker.state}»`));
+    }, timeoutMs);
+
+    worker.addEventListener('statechange', onStateChange);
+    // Воркер мог активироваться между register() и подпиской на событие.
+    onStateChange();
+  });
+
+  return registration;
+};
+
 // Получение FCM-токена устройства.
 // Вызывать только по действию пользователя (клик по кнопке) — на iOS
 // запрос разрешения вне жеста игнорируется.
@@ -144,8 +195,10 @@ export const getFCMToken = async (): Promise<string | null> => {
     }
 
     // Регистрируем (или переиспользуем) наш Service Worker и передаём его FCM,
-    // чтобы тот не создавал второй SW на том же scope.
-    const registration = await navigator.serviceWorker.register(SERVICE_WORKER_PATH);
+    // чтобы тот не создавал второй SW на том же scope. Ждём активации —
+    // иначе getToken падает с "requires an active service worker".
+    const registered = await navigator.serviceWorker.register(SERVICE_WORKER_PATH);
+    const registration = await waitForActiveServiceWorker(registered);
 
     const token = await getToken(messaging, {
       vapidKey: VAPID_KEY,
