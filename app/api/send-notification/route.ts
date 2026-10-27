@@ -35,8 +35,13 @@ let cachedAccessToken: { value: string; expiresAt: number } | null = null;
 const base64url = (value: object): string =>
   Buffer.from(JSON.stringify(value)).toString('base64url');
 
+// Ключ из Vercel UI часто вставляют вместе с обрамляющими кавычками —
+// OpenSSL тогда падает с "1E08010C:DECODER routines::unsupported".
 const getPrivateKey = (): string =>
-  (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+  (process.env.FIREBASE_PRIVATE_KEY || '')
+    .trim()
+    .replace(/^["']|["']$/g, '')
+    .replace(/\\n/g, '\n');
 
 // Получение access-токена Google по JWT сервисного аккаунта (RS256)
 async function getGoogleAccessToken(): Promise<string> {
