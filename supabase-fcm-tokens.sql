@@ -27,10 +27,18 @@ CREATE INDEX IF NOT EXISTS idx_fcm_tokens_user_id_platform ON public.fcm_tokens(
 -- Включение Row Level Security (RLS)
 ALTER TABLE public.fcm_tokens ENABLE ROW LEVEL SECURITY;
 
+-- Приложение не использует Supabase Auth (auth.uid() всегда NULL), поэтому
+-- политики разрешают работу с токенами без user_id; сбрасываем старые версии,
+-- чтобы скрипт можно было применять повторно.
+DROP POLICY IF EXISTS "Users can view own FCM tokens" ON public.fcm_tokens;
+DROP POLICY IF EXISTS "Users can insert own FCM tokens" ON public.fcm_tokens;
+DROP POLICY IF EXISTS "Users can update own FCM tokens" ON public.fcm_tokens;
+DROP POLICY IF EXISTS "Users can delete own FCM tokens" ON public.fcm_tokens;
+
 -- Политика: пользователи могут видеть только свои токены
 CREATE POLICY "Users can view own FCM tokens"
   ON public.fcm_tokens FOR SELECT
-  USING (auth.uid() = user_id);
+  USING (auth.uid() = user_id OR user_id IS NULL);
 
 -- Политика: пользователи могут вставлять свои токены
 CREATE POLICY "Users can insert own FCM tokens"
@@ -40,7 +48,8 @@ CREATE POLICY "Users can insert own FCM tokens"
 -- Политика: пользователи могут обновлять свои токены
 CREATE POLICY "Users can update own FCM tokens"
   ON public.fcm_tokens FOR UPDATE
-  USING (auth.uid() = user_id OR user_id IS NULL);
+  USING (auth.uid() = user_id OR user_id IS NULL)
+  WITH CHECK (auth.uid() = user_id OR user_id IS NULL);
 
 -- Политика: пользователи могут удалять свои токены
 CREATE POLICY "Users can delete own FCM tokens"

@@ -224,8 +224,14 @@ export const onForegroundMessage = async (
   return onMessage(messaging, callback);
 };
 
+// Последняя причина сбоя сохранения токена (показывается в тосте — на iOS нет консоли).
+let lastSaveError: string | null = null;
+
+export const getFCMSaveError = (): string | null => lastSaveError;
+
 // Сохранение FCM-токена в таблицу fcm_tokens (Supabase)
 export const saveFCMTokenToSupabase = async (token: string): Promise<boolean> => {
+  lastSaveError = null;
   try {
     const { supabase } = await import('./supabaseClient');
 
@@ -241,6 +247,7 @@ export const saveFCMTokenToSupabase = async (token: string): Promise<boolean> =>
     );
 
     if (error) {
+      lastSaveError = `${error.code ?? 'ошибка'}: ${error.message}`;
       console.error('[Firebase] Ошибка сохранения токена в Supabase:', error);
       return false;
     }
@@ -248,6 +255,7 @@ export const saveFCMTokenToSupabase = async (token: string): Promise<boolean> =>
     console.log('[Firebase] FCM-токен сохранён в Supabase');
     return true;
   } catch (error) {
+    lastSaveError = error instanceof Error ? error.message : String(error);
     console.error('[Firebase] Ошибка сохранения FCM-токена:', error);
     return false;
   }
