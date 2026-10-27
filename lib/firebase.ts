@@ -235,10 +235,21 @@ export const saveFCMTokenToSupabase = async (token: string): Promise<boolean> =>
   try {
     const { supabase } = await import('./supabaseClient');
 
+    // Токен привязывается к текущему пользователю — RLS разрешает запись
+    // только со своим user_id, поэтому без сессии сохранить нельзя.
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      lastSaveError = 'нет активной сессии — войдите в аккаунт';
+      return false;
+    }
+
     const { error } = await supabase.from('fcm_tokens').upsert(
       {
         token,
-        user_id: localStorage.getItem('user_id') || null,
+        user_id: user.id,
         user_agent: navigator.userAgent,
         platform: detectPlatform(),
         updated_at: new Date().toISOString(),

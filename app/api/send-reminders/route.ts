@@ -26,6 +26,7 @@ type Habit = {
   reminder_time: string | null;
   days: string[] | null;
   completed_today: boolean | null;
+  user_id: string | null;
 };
 
 export async function POST(request: NextRequest) {
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest) {
 
   const { data, error } = await supabase
     .from('habits')
-    .select('id, title, reminder_time, days, completed_today');
+    .select('id, title, reminder_time, days, completed_today, user_id');
 
   if (error) {
     return NextResponse.json({ error: `Supabase: ${error.message}` }, { status: 500 });
@@ -79,23 +80,37 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ time: currentTime, weekday, due: 0, sent: 0, failed: 0 });
   }
 
-  const { data: tokenRows, error: tokenError } = await supabase.from('fcm_tokens').select('token');
+  // Привычки без владельца (созданные до появления аккаунтов) пропускаем.
+  const ownerIds = Array.from(
+    new Set(due.map((habit) => habit.user_id).filter((id): id is string => Boolean(id)))
+  );
 
-  if (tokenError) {
-    return NextResponse.json({ error: `Supabase: ${tokenError.message}` }, { status: 500 });
-  }
-
-  const tokens = (tokenRows ?? []).map((row: { token: string }) => row.token);
-
-  if (tokens.length === 0) {
+  if (ownerIds.length === 0) {
     return NextResponse.json({
       time: currentTime,
       weekday,
       due: due.length,
       sent: 0,
       failed: 0,
-      message: 'Нет сохранённых токенов',
+      message: 'У найденных привычек нет владельца',
     });
+  }
+
+  const { data: tokenRows, error: tokenError } = await supabase
+    .from('fcm_tokens')
+    .select('token, user_id')
+    .in('user_id', ownerIds);
+
+  if (tokenError) {
+    return NextResponse.json({ error: `Supabase: ${tokenError.message}` }, { status: 500 });
+  }
+
+  // Токены раскладываем по владельцам: каждый получает только свои напоминания.
+  const tokensByUser = new Map<string, string[]>();
+  for (const row of (tokenRows ?? []) as { token: string; user_id: string }[]) {
+    const list = tokensByUser.get(row.user_id) ?? [];
+    list.push(row.token);
+    tokensByUser.set(row.user_id, list);
   }
 
   let sent = 0;
@@ -103,6 +118,9 @@ export async function POST(request: NextRequest) {
   const errors: string[] = [];
 
   for (const habit of due) {
+    const tokens = habit.user_id ? tokensByUser.get(habit.user_id) ?? [] : [];
+    if (tokens.length === 0) continue;
+
     try {
       const result = await sendPushToTokens(tokens, {
         title: 'StudyTracker — напоминание',

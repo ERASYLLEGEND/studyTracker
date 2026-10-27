@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import type { User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabaseClient';
+import AuthScreen from './components/AuthScreen';
 import { 
   CheckSquare, 
   Calendar, 
@@ -26,7 +28,9 @@ import {
   MoreVertical,
   Edit,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  LogOut,
+  Loader2
 } from 'lucide-react';
 
 interface Subtask {
@@ -77,6 +81,10 @@ const WEEK_DAYS = [
 ];
 
 export default function Home() {
+  // Auth: пока сессия не загружена, показываем спиннер; без сессии — экран входа
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
   const [activeTab, setActiveTab] = useState<TabType>('tasks');
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [taskView, setTaskView] = useState<TaskView>('list');
@@ -134,12 +142,60 @@ export default function Home() {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  // Initial Fetching
+  // Сессия Supabase Auth: при входе/выходе сразу обновляем состояние
   useEffect(() => {
+    let active = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active) return;
+      setUser(data.session?.user ?? null);
+      setAuthLoading(false);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => {
+      active = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  // Initial Fetching — только для вошедшего пользователя
+  useEffect(() => {
+    if (!user) {
+      setTasks([]);
+      setExams([]);
+      setHabits([]);
+      return;
+    }
+
     fetchTasks();
     fetchExams();
     fetchHabits();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  // После входа заново привязываем FCM-токен к аккаунту: токены, сохранённые
+  // до появления аккаунтов, были без владельца и удалены миграцией. Кнопки
+  // «включить уведомления» при уже выданном разрешении нет, поэтому делаем это сами.
+  useEffect(() => {
+    if (!user || typeof window === 'undefined' || !('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
+
+    let cancelled = false;
+    (async () => {
+      const { getFCMToken, saveFCMTokenToSupabase } = await import('@/lib/firebase');
+      const token = await getFCMToken();
+      if (!token || cancelled) return;
+      await saveFCMTokenToSupabase(token);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   // Request notification permission and check habit reminders
   useEffect(() => {
@@ -272,10 +328,12 @@ export default function Home() {
 
   // DB Methods: Tasks
   const fetchTasks = async () => {
+    if (!user) return;
     try {
       const { data, error } = await supabase
         .from('tasks')
         .select('*')
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
       if (error) throw error;
       if (data) setTasks(data);
@@ -287,9 +345,10 @@ export default function Home() {
 
   const addTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTask.trim()) return;
+    if (!newTask.trim() || !user) return;
     try {
       const taskData = {
+        user_id: user.id,
         title: newTask,
         priority,
         completed: false,
@@ -466,10 +525,12 @@ export default function Home() {
 
   // DB Methods: Exams
   const fetchExams = async () => {
+    if (!user) return;
     try {
       const { data, error } = await supabase
         .from('exams')
         .select('*')
+        .eq('user_id', user.id)
         .order('date', { ascending: true });
       if (error) throw error;
       if (data) setExams(data);
@@ -481,11 +542,11 @@ export default function Home() {
 
   const addExam = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!examTitle.trim() || !examDate) return;
+    if (!examTitle.trim() || !examDate || !user) return;
     try {
       const { data, error } = await supabase
         .from('exams')
-        .insert([{ title: examTitle, date: examDate, type: examType }])
+        .insert([{ user_id: user.id, title: examTitle, date: examDate, type: examType }])
         .select();
       if (error) throw error;
       if (data) {
@@ -514,8 +575,9 @@ export default function Home() {
 
   // DB Methods: Habits
   const fetchHabits = async () => {
+    if (!user) return;
     try {
-      const { data, error } = await supabase.from('habits').select('*');
+      const { data, error } = await supabase.from('habits').select('*').eq('user_id', user.id);
       if (error) throw error;
       if (data) setHabits(data);
     } catch (error) {
@@ -526,9 +588,10 @@ export default function Home() {
 
   const addHabit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newHabit.trim()) return;
+    if (!newHabit.trim() || !user) return;
     try {
       const newHabitData = { 
+        user_id: user.id,
         title: newHabit, 
         streak: 0, 
         completed_today: false,
@@ -708,6 +771,21 @@ export default function Home() {
     );
   };
 
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+  };
+
+  // Пока сессия не загружена — спиннер, без сессии — экран входа
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-zinc-950">
+        <Loader2 size={32} className="animate-spin text-emerald-500" />
+      </div>
+    );
+  }
+
+  if (!user) return <AuthScreen />;
+
   return (
     <div className="flex flex-col md:flex-row min-h-screen bg-zinc-950">
       {/* Notification Toast */}
@@ -800,6 +878,20 @@ export default function Home() {
               style={{ width: `${habitProgress}%` }}
             />
           </div>
+        </div>
+
+        {/* Аккаунт: email и выход */}
+        <div className="mt-4 flex items-center justify-between gap-2 rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3">
+          <span className="text-sm text-zinc-400 truncate" title={user.email ?? ''}>
+            {user.email}
+          </span>
+          <button
+            onClick={handleSignOut}
+            title="Выйти из аккаунта"
+            className="shrink-0 p-2 rounded-lg text-zinc-400 hover:text-red-300 hover:bg-red-950/40 transition-colors"
+          >
+            <LogOut size={18} />
+          </button>
         </div>
       </aside>
 
@@ -1578,6 +1670,13 @@ export default function Home() {
         >
           <Activity size={22} />
           <span className="text-[11px] mt-1 font-medium">Привычки</span>
+        </button>
+        <button 
+          onClick={handleSignOut} 
+          className="flex flex-col items-center transition-colors text-zinc-500 hover:text-red-300"
+        >
+          <LogOut size={22} />
+          <span className="text-[11px] mt-1 font-medium">Выход</span>
         </button>
       </nav>
     </div>
