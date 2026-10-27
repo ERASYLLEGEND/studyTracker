@@ -19,9 +19,37 @@ const firebaseConfig = {
 };
 
 // VAPID-ключ: Firebase Console -> Project settings -> Cloud Messaging -> Web Push certificates
-const VAPID_KEY =
-  process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY ||
+const ENV_VAPID_KEY = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY || '';
+// Резервный ключ — на случай, если переменная окружения на хостинге не задана.
+const FALLBACK_VAPID_KEY =
   'BL9q-5X-dn3zR-M64ddetb2f4ZMSaTzhbuaceAnWAjcNIIkar6UKnoOZ-n5PQhqmx-rt2QS_X9oQqu0IfFA8oto';
+const VAPID_KEY = ENV_VAPID_KEY || FALLBACK_VAPID_KEY;
+
+// Последняя причина сбоя получения токена: на iOS консоли разработчика нет,
+// поэтому текст ошибки показывается пользователю в тосте.
+let lastTokenError: string | null = null;
+
+export const getFCMTokenError = (): string | null => lastTokenError;
+
+const failToken = (reason: string, error?: unknown): null => {
+  lastTokenError = reason;
+  console.error(`[Firebase] Не удалось получить FCM-токен: ${reason}`, error ?? '');
+  return null;
+};
+
+// Проверяем форму VAPID-ключа: 87 символов base64url, 65 байт, первый байт 0x04
+// (несжатая точка P-256). Одна опечатка при копировании делает ключ невалидным,
+// и getToken падает с невнятной ошибкой — лучше поймать это сразу.
+const validateVapidKey = (key: string): string | null => {
+  if (!key) return 'не задан (NEXT_PUBLIC_FIREBASE_VAPID_KEY отсутствует)';
+  if (!/^[A-Za-z0-9_-]+$/.test(key)) return 'содержит недопустимые символы';
+  if (key.length !== 87) return `неверная длина: ${key.length} символов вместо 87`;
+  const raw = atob(key.replace(/-/g, '+').replace(/_/g, '/'));
+  if (raw.length !== 65 || raw.charCodeAt(0) !== 0x04) {
+    return 'повреждён: это не несжатая точка P-256 (ключ скопирован с опечаткой)';
+  }
+  return null;
+};
 
 // Единственный Service Worker приложения (FCM + офлайн-кэш).
 // Важно: два SW на одном scope перезаписывают друг друга, поэтому путь один.
@@ -72,21 +100,47 @@ const detectPlatform = (): string => {
 // Вызывать только по действию пользователя (клик по кнопке) — на iOS
 // запрос разрешения вне жеста игнорируется.
 export const getFCMToken = async (): Promise<string | null> => {
-  if (typeof window === 'undefined') return null;
+  lastTokenError = null;
+
+  if (typeof window === 'undefined') return failToken('код выполняется на сервере (SSR)');
+  if (!('Notification' in window)) return failToken('браузер не поддерживает Notification API');
+  if (!('serviceWorker' in navigator)) return failToken('браузер не поддерживает Service Worker');
+  if (!('PushManager' in window)) return failToken('браузер не поддерживает Push API');
+
+  // Пустой firebaseConfig — самая частая причина на хостинге: переменные
+  // NEXT_PUBLIC_FIREBASE_* вшиваются в бандл только на этапе сборки.
+  const emptyConfigKeys = Object.entries(firebaseConfig)
+    .filter(([, value]) => !value)
+    .map(([key]) => key);
+  if (emptyConfigKeys.length) {
+    return failToken(`не заданы переменные Firebase: ${emptyConfigKeys.join(', ')}`);
+  }
+
+  const vapidProblem = validateVapidKey(VAPID_KEY);
+  if (vapidProblem) return failToken(`VAPID-ключ ${vapidProblem}`);
+  console.info(
+    `[Firebase] VAPID-ключ взят из ${
+      ENV_VAPID_KEY ? 'NEXT_PUBLIC_FIREBASE_VAPID_KEY' : 'встроенного резерва'
+    }`
+  );
 
   try {
     const messaging = await getFirebaseMessaging();
-    if (!messaging) return null;
+    if (!messaging) {
+      return failToken(
+        'Firebase Messaging не поддерживается этим браузером (на iOS нужно установить приложение на экран «Домой»)'
+      );
+    }
+
+    if (Notification.permission === 'denied') {
+      return failToken('разрешение на уведомления отклонено в настройках устройства');
+    }
 
     if (Notification.permission === 'default') {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
-        console.warn('[Firebase] Разрешение на уведомления не выдано');
-        return null;
+        return failToken(`разрешение не выдано (permission=${permission})`);
       }
-    } else if (Notification.permission !== 'granted') {
-      console.warn('[Firebase] Уведомления запрещены в настройках браузера');
-      return null;
     }
 
     // Регистрируем (или переиспользуем) наш Service Worker и передаём его FCM,
@@ -98,10 +152,12 @@ export const getFCMToken = async (): Promise<string | null> => {
       serviceWorkerRegistration: registration,
     });
 
-    return token || null;
+    if (!token) return failToken('FCM вернул пустой токен');
+    return token;
   } catch (error) {
-    console.error('[Firebase] Ошибка получения FCM-токена:', error);
-    return null;
+    const code = (error as { code?: string } | null)?.code;
+    const message = error instanceof Error ? error.message : String(error);
+    return failToken(`getToken упал${code ? ` [${code}]` : ''}: ${message}`, error);
   }
 };
 

@@ -201,10 +201,11 @@ export default function Home() {
 
     // Получаем FCM-токен и сохраняем его в Supabase для фоновых push-уведомлений.
     // Динамический импорт: Firebase Messaging нельзя грузить при SSR.
-    const { getFCMToken, saveFCMTokenToSupabase } = await import('@/lib/firebase');
+    const { getFCMToken, getFCMTokenError, saveFCMTokenToSupabase } = await import('@/lib/firebase');
     const token = await getFCMToken();
     if (!token) {
-      showNotification('error', 'Не удалось получить push-токен устройства');
+      // Показываем точную причину: на iOS консоли разработчика нет.
+      showNotification('error', `Push-токен не получен: ${getFCMTokenError() ?? 'причина неизвестна'}`);
       return;
     }
 
