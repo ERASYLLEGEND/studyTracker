@@ -9,12 +9,12 @@ importScripts('https://www.gstatic.com/firebasejs/13.1.0/firebase-app-compat.js'
 importScripts('https://www.gstatic.com/firebasejs/13.1.0/firebase-messaging-compat.js');
 
 const firebaseConfig = {
-  apiKey: '',
-  authDomain: '',
-  projectId: '',
-  storageBucket: '',
-  messagingSenderId: '',
-  appId: '',
+  apiKey: 'AIzaSyDdhLmcTI4M_PflnqYJu4__qwz-iNR6n5M',
+  authDomain: 'studytracker-32d6d.firebaseapp.com',
+  projectId: 'studytracker-32d6d',
+  storageBucket: 'studytracker-32d6d.firebasestorage.app',
+  messagingSenderId: '1072929489913',
+  appId: '1:1072929489913:web:a7424957813e2b8c277328',
 };
 
 const CACHE_NAME = 'study-tracker-v1';
