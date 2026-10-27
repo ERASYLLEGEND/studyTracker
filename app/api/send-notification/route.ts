@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { createSign } from 'node:crypto';
+import { sendPushToTokens } from '@/lib/server/fcm';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
  * POST /api/send-notification
  *
  * Отправляет Web Push-уведомление через FCM HTTP v1 API.
- * Токены берутся из таблицы fcm_tokens (Supabase).
+ * Токены берутся из таблицы fcm_tokens (Supabase) либо из тела запроса.
  *
  * Тело запроса:
  *   { "title": "Чтение 20 минут", "body": "Не забудьте выполнить привычку", "url": "/" }
@@ -28,59 +28,6 @@ type SendRequestBody = {
   tag?: string;
   tokens?: string[];
 };
-
-// Кэш OAuth-токена Google (живёт ~1 час)
-let cachedAccessToken: { value: string; expiresAt: number } | null = null;
-
-const base64url = (value: object): string =>
-  Buffer.from(JSON.stringify(value)).toString('base64url');
-
-// Ключ из Vercel UI часто вставляют вместе с обрамляющими кавычками —
-// OpenSSL тогда падает с "1E08010C:DECODER routines::unsupported".
-const getPrivateKey = (): string =>
-  (process.env.FIREBASE_PRIVATE_KEY || '')
-    .trim()
-    .replace(/^["']|["']$/g, '')
-    .replace(/\\n/g, '\n');
-
-// Получение access-токена Google по JWT сервисного аккаунта (RS256)
-async function getGoogleAccessToken(): Promise<string> {
-  if (cachedAccessToken && Date.now() < cachedAccessToken.expiresAt - 60_000) {
-    return cachedAccessToken.value;
-  }
-
-  const now = Math.floor(Date.now() / 1000);
-  const unsignedToken = `${base64url({ alg: 'RS256', typ: 'JWT' })}.${base64url({
-    iss: process.env.FIREBASE_CLIENT_EMAIL,
-    scope: 'https://www.googleapis.com/auth/firebase.messaging',
-    aud: 'https://oauth2.googleapis.com/token',
-    iat: now,
-    exp: now + 3600,
-  })}`;
-
-  const signature = createSign('RSA-SHA256').update(unsignedToken).sign(getPrivateKey());
-  const assertion = `${unsignedToken}.${signature.toString('base64url')}`;
-
-  const response = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Google OAuth ${response.status}: ${await response.text()}`);
-  }
-
-  const data = (await response.json()) as { access_token: string; expires_in: number };
-  cachedAccessToken = {
-    value: data.access_token,
-    expiresAt: Date.now() + data.expires_in * 1000,
-  };
-  return data.access_token;
-}
 
 export async function POST(request: NextRequest) {
   // Опциональная защита эндпоинта
@@ -144,9 +91,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ sent: 0, failed: 0, total: 0, message: 'Нет сохранённых токенов' });
   }
 
-  let accessToken: string;
+  let result;
   try {
-    accessToken = await getGoogleAccessToken();
+    result = await sendPushToTokens(tokens, { title, body, url, tag });
   } catch (error) {
     return NextResponse.json(
       { error: `Не удалось получить доступ к FCM: ${(error as Error).message}` },
@@ -154,69 +101,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const endpoint = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
-  const invalidTokens: string[] = [];
-
-  const results = await Promise.allSettled(
-    tokens.map(async (token) => {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: {
-            token,
-            // notification нужен, чтобы уведомление показывалось на iOS
-            // даже при закрытом/заблокированном приложении.
-            notification: { title, body },
-            data: { title, body, url, tag },
-            webpush: {
-              notification: {
-                title,
-                body,
-                icon: '/icon-192.png',
-                badge: '/icon-192.png',
-                tag,
-                requireInteraction: true,
-              },
-              fcm_options: { link: url },
-            },
-          },
-        }),
-      });
-
-      if (!response.ok) {
-        const details = await response.text();
-        // Токен устарел/отозван — помечаем на удаление
-        if (response.status === 404 || details.includes('UNREGISTERED')) {
-          invalidTokens.push(token);
-        }
-        throw new Error(`${response.status}: ${details}`);
-      }
-
-      return token;
-    })
-  );
-
-  const sent = results.filter((result) => result.status === 'fulfilled').length;
-  const failed = results.length - sent;
-
   // Удаляем недействительные токены, чтобы не копить мусор
-  if (supabase && invalidTokens.length > 0) {
-    await supabase.from('fcm_tokens').delete().in('token', invalidTokens);
+  if (supabase && result.invalidTokens.length > 0) {
+    await supabase.from('fcm_tokens').delete().in('token', result.invalidTokens);
   }
 
-  const errors = results
-    .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
-    .map((result) => result.reason?.message ?? String(result.reason));
-
   return NextResponse.json({
-    sent,
-    failed,
+    sent: result.sent,
+    failed: result.failed,
     total: tokens.length,
-    removed: invalidTokens.length,
-    ...(errors.length > 0 ? { errors } : {}),
+    removed: result.invalidTokens.length,
+    ...(result.errors.length > 0 ? { errors: result.errors } : {}),
   });
 }
